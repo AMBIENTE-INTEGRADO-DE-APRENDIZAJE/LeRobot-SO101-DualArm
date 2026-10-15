@@ -1,240 +1,74 @@
-# 🦾 LeRobot SO-101 — Configuración Dual Arm (Leader/Follower A y B)
+# SO101 — Juego de pasos con teleoperación
 
-**Departamento de Ingeniería Industrial | Universidad de los Andes**\
-**Ambiente Integrado de Aprendizaje (AIA)**
+Extensión del proyecto [LeRobot-SO101-DualArm](https://github.com/AMBIENTE-INTEGRADO-DE-APRENDIZAJE/LeRobot-SO101-DualArm):
+en vez de programar cinemática o usar imitation learning, **enseñas movimientos
+moviendo el brazo líder con la mano**, los guardas con nombre, y los combinas
+en secuencias (`for`/`while`) desde código Python o desde una página web con
+botones — pensado para estudiantes de primeros semestres de ingeniería.
 
-Guía completa para configurar y operar dos pares de brazos robóticos SO-101 con [LeRobot](https://github.com/huggingface/lerobot) de Hugging Face. Cubre desde la identificación de puertos hasta la teleoperación simultánea de ambos brazos.
+Un solo brazo (follower), control físico directo, sin simuladores ni redes
+neuronales.
 
----
+## Cómo funciona
 
-## Requisitos previos
+1. **Enseñar un paso**: mueves el brazo **líder** con la mano; el **follower**
+   lo sigue en vivo. El programa graba la postura automáticamente cada medio
+   segundo mientras grabas, y guardas la secuencia con un nombre
+   (`paso1`, `recoger`, `girar`, ...).
+2. **Reproducir un paso**: se manda cada punto grabado directo al follower,
+   interpolado en sub-pasos para que el movimiento se vea fluido — sin
+   depender de que el brazo "llegue exacto" a cada punto, que es lo que
+   fallaba con el enfoque inicial de interpolación por tolerancia.
+3. **Combinar pasos**: en código con `for`/`while` normales de Python, o
+   desde la página web armando bloques de "Paso", "Repetir N veces" y
+   "Mientras no se detenga" — que muestra al lado el código Python
+   equivalente.
 
-- Ubuntu con Conda instalado.
-- Dos pares de brazos SO-101 (Leader A + Follower A, Leader B + Follower B).
-- 4 puertos USB disponibles.
-- LeRobot instalado (`pip install lerobot` o desde el repo oficial).
+## Archivos
 
-## 0. Activar el entorno
-
-```bash
-conda activate lerobot
-cd ~/lerobot
-```
-
-## 1. Identificar los puertos USB
-
-Cada brazo se conecta a un puerto serial distinto. Para identificarlos:
-
-```bash
-lerobot-find-port
-```
-
-El programa pedirá desconectar un dispositivo USB, detectará cuál desapareció y mostrará su puerto. Repetir para cada brazo.
-
-Ejemplo de asignación (puede variar en cada conexión):
-
-| Dispositivo | Puerto |
+| Archivo | Para qué sirve |
 |---|---|
-| Leader A | `/dev/ttyACM0` |
-| Follower A | `/dev/ttyACM1` |
-| Leader B | `/dev/ttyACM3` |
-| Follower B | `/dev/ttyACM2` |
+| `robot_api.py` | Capa de seguridad y movimiento (capa base: todo lo demás la usa) |
+| `ensenar_y_jugar.py` | Enseña pasos por teleoperación con el líder (varios por sesión) |
+| `mi_secuencia.py` | Plantilla de ejemplo para combinar pasos con `for`/`while` en código |
+| `app.py` + `index.html` | Servidor web local + página para armar y correr secuencias con botones |
+| `reto1_secuencia.py` | Reto fijo de pick-and-place (flujo más antiguo, con posiciones nombradas) |
+| `capturar_posiciones.py` | Enseña posiciones sueltas a mano, con el torque apagado (flujo de `reto1_secuencia.py`) |
+| `capturar_trayectoria.py` | Enseña trayectorias de varios puntos a mano (flujo de `reto1_secuencia.py`) |
+| `ensenar_con_leader.py` | Enseña posiciones sueltas por teleoperación (versión anterior de `ensenar_y_jugar.py`) |
 
-> ⚠️ **Los puertos cambian al reconectar los cables USB.** Siempre verificar con `lerobot-find-port` antes de cada sesión.
-
-## 2. Calibración
-
-Cada brazo necesita su propia calibración almacenada en un archivo JSON independiente (A o B). Nunca usar `None.json`.
-
-### Dónde se guardan las calibraciones
-
-```
-~/.cache/huggingface/lerobot/calibration/
-├── teleoperators/so101_leader/
-│   ├── A.json
-│   └── B.json
-└── robots/so101_follower/
-    ├── A.json
-    └── B.json
-```
-
-### Procedimiento de calibración
-
-Durante la calibración el programa pide dos cosas:
-
-1. Llevar todas las articulaciones aproximadamente a la **mitad de su recorrido** → presionar `ENTER`.
-2. Mover cada articulación por **todo su rango completo** → presionar `ENTER`.
-
-### Calibrar Leader A
+## Uso rápido
 
 ```bash
-lerobot-calibrate \
-  --teleop.type=so101_leader \
-  --teleop.id=A \
-  --teleop.port=/dev/ttyACM0
+# 1. Enseñar pasos (terminal)
+python ensenar_y_jugar.py \
+    --puerto_follower /dev/ttyACM0 --id_follower A \
+    --puerto_leader   /dev/ttyACM1 --id_leader   A
+
+# 2. Probar una secuencia por código
+python mi_secuencia.py --port /dev/ttyACM0 --id A
+
+# 3. Página web para armar secuencias con botones
+pip install fastapi "uvicorn[standard]"
+# edita PUERTO_FOLLOWER / ID_FOLLOWER al inicio de app.py
+uvicorn app:app --host 0.0.0.0 --port 8000
+# abre http://localhost:8000
 ```
 
-### Calibrar Follower A
+No corras `ensenar_y_jugar.py` y `app.py` al mismo tiempo — ambos necesitan
+el puerto serial del brazo para ellos solos.
 
-```bash
-lerobot-calibrate \
-  --robot.type=so101_follower \
-  --robot.id=A \
-  --robot.port=/dev/ttyACM1
-```
+## Requiere
 
-### Calibrar Leader B
+- Brazo(s) SO-101 calibrado(s) (ver repo base para el proceso de calibración).
+- Entorno con [LeRobot](https://github.com/huggingface/lerobot) instalado.
+- Python 3.10+.
 
-```bash
-lerobot-calibrate \
-  --teleop.type=so101_leader \
-  --teleop.id=B \
-  --teleop.port=/dev/ttyACM3
-```
+## Seguridad
 
-### Calibrar Follower B
-
-```bash
-lerobot-calibrate \
-  --robot.type=so101_follower \
-  --robot.id=B \
-  --robot.port=/dev/ttyACM2
-```
-
-## 3. Teleoperación
-
-### Brazo A
-
-```bash
-lerobot-teleoperate \
-  --teleop.type=so101_leader \
-  --teleop.id=A \
-  --teleop.port=/dev/ttyACM0 \
-  --robot.type=so101_follower \
-  --robot.id=A \
-  --robot.port=/dev/ttyACM1
-```
-
-### Brazo B
-
-```bash
-lerobot-teleoperate \
-  --teleop.type=so101_leader \
-  --teleop.id=B \
-  --teleop.port=/dev/ttyACM3 \
-  --robot.type=so101_follower \
-  --robot.id=B \
-  --robot.port=/dev/ttyACM2
-```
-
-### Operación simultánea (dual arm)
-
-Abrir **dos terminales** y ejecutar un brazo en cada una:
-
-```
-Terminal 1 → Brazo A (comandos de arriba)
-Terminal 2 → Brazo B (comandos de arriba)
-```
-
-## 4. Gestión de calibraciones
-
-### Consultar una calibración
-
-```bash
-# Followers
-cat ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/A.json
-cat ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/B.json
-
-# Leaders
-cat ~/.cache/huggingface/lerobot/calibration/teleoperators/so101_leader/A.json
-cat ~/.cache/huggingface/lerobot/calibration/teleoperators/so101_leader/B.json
-```
-
-### Editar una calibración manualmente
-
-```bash
-nano ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/B.json
-```
-
-Ejemplo de parámetros editables:
-
-```json
-"wrist_roll": {
-    "id": 5,
-    "drive_mode": 0,
-    "homing_offset": -100,
-    "range_min": 0,
-    "range_max": 3417
-}
-```
-
-Guardar con `Ctrl+O` → `ENTER` → `Ctrl+X`.
-
-### Respaldar calibraciones
-
-```bash
-mkdir -p ~/lerobot_calibration_backup
-
-cp ~/.cache/huggingface/lerobot/calibration/teleoperators/so101_leader/A.json \
-   ~/lerobot_calibration_backup/leader_A.json
-cp ~/.cache/huggingface/lerobot/calibration/teleoperators/so101_leader/B.json \
-   ~/lerobot_calibration_backup/leader_B.json
-cp ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/A.json \
-   ~/lerobot_calibration_backup/follower_A.json
-cp ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/B.json \
-   ~/lerobot_calibration_backup/follower_B.json
-```
-
-### Restaurar una calibración
-
-```bash
-cp ~/lerobot_calibration_backup/follower_A.json \
-   ~/.cache/huggingface/lerobot/calibration/robots/so101_follower/A.json
-```
-
-## 5. Troubleshooting
-
-### "El sistema pide calibrar de nuevo"
-
-Verificar que se esté usando el ID correcto (`--teleop.id=A` y `--robot.id=A`, no omitirlo). Sin el parámetro `id`, LeRobot busca `None.json` que no existe.
-
-### Overload Error
-
-```
-Overload error!
-```
-
-Ocurre cuando un servo alcanza un límite mecánico o la calibración no coincide con la posición física. Recalibrar el brazo afectado o revisar el montaje.
-
-### Missing Motor IDs
-
-```
-Missing motor IDs: 4
-```
-
-Verificar cableado, alimentación y que el puerto USB sea el correcto. Asegurar que todos los motores del daisy-chain responden.
-
-### La garra no cierra completamente
-
-Editar `range_min` en la sección `gripper` del archivo de calibración correspondiente.
-
-### Wrist Flex / Wrist Roll no siguen correctamente
-
-Revisar `homing_offset`, `range_min` y `range_max` en el JSON. Si persiste después de recalibrar, verificar el montaje mecánico del servo o el homing_offset almacenado en la EEPROM del motor.
-
-## 6. Recomendaciones
-
-- **Nunca usar `None.json`** — siempre especificar `--teleop.id=A` o `--robot.id=B`.
-- Mantener un archivo de calibración independiente por brazo (`A.json` y `B.json`).
-- Hacer backup después de cada calibración exitosa.
-- Verificar puertos USB con `lerobot-find-port` antes de cada sesión.
-- No recalibrar un brazo que ya funciona bien — la calibración se preserva entre sesiones.
-
-## 📎 Referencias
-
-- [LeRobot — Hugging Face](https://github.com/huggingface/lerobot)
-- [SO-101 Assembly Guide](https://github.com/huggingface/lerobot/blob/main/examples/robots/so101/README.md)
-
-## 📄 Licencia
-
-Uso académico — Universidad de los Andes.
+- El torque se fuerza a activado al conectar, para evitar que una
+  articulación quede "muerta" por una falla anterior.
+- Ctrl+C corta el movimiento como parada de emergencia en los scripts de
+  terminal; desde la página web, el botón "Detener" revisa varias veces por
+  segundo y corta casi de inmediato — pero ninguno de los dos reemplaza el
+  interruptor físico. Supervisa siempre el brazo mientras está energizado.
